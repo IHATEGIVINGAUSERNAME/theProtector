@@ -5,7 +5,7 @@
 
 This paper presents TheProtector, a comprehensive security monitoring framework designed for Linux environments with resource constraints. Unlike traditional enterprise security solutions that require significant infrastructure investment, TheProtector demonstrates that sophisticated threat detection and active response capabilities can be achieved through intelligent architecture design and efficient resource utilization. The framework implements advanced detection techniques including eBPF kernel monitoring, YARA-based malware analysis, behavioral baseline establishment, and active threat response mechanisms, all within a single bash-based implementation optimized for minimal resource consumption.
 
-### 1. Intorduction
+### 1. Introduction
 
 Modern cybersecurity landscapes demand sophisticated monitoring and response capabilities typically reserved for enterprise environments with substantial budgets. Traditional security solutions often suffer from vendor lock-in, high resource overhead, and limited customization options. TheProtector addresses these limitations by providing enterprise-grade security monitoring capabilities through an open-source, lightweight framework designed for budget-conscious environments.
 
@@ -112,7 +112,7 @@ Memory monitoring focuses on detecting advanced threats that operate primarily i
 
 **Kernel Memory Protection**: When operating with appropriate privileges, monitoring of kernel symbol tables for rootkit detection.
 
-### 4. Advanced Dtection Techniques
+### 4. Advanced Detection Techniques
 
 #### 4.1 Behavioral Baseline Establishment
 
@@ -224,7 +224,7 @@ TheProtector prioritizes deployment simplicity through:
 
 **Single-File Distribution**: Entire framework distributed as a single bash script requiring no complex installation procedures.
 
-**Dependency Managenent**: Graceful handling of optional dependencies with feature degradation rather than failure.
+**Dependency Management**: Graceful handling of optional dependencies with feature degradation rather than failure.
 
 **Automatic Configuration**: Intelligent default configuration with environment-specific optimization.
 

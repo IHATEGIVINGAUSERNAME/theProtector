@@ -73,6 +73,16 @@ sudo ./theprotector.sh install
 sudo ./theprotector.sh systemd
 ```
 
+### Nix Flake Installation
+
+> Note: the Nix flake bundles `theprotector.sh` as a wrapper script that includes all optional dependencies for `theprotector.sh`
+
+Run the following command to install `theprotector.sh` with Nix:
+
+```
+nix profile install github:IHATEGIVINGAUSERNAME/theprotector
+```
+
 ## Usage
 
 ### Basic Commands

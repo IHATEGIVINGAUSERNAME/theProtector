@@ -35,6 +35,7 @@ QUARANTINE_DIR="$LOG_DIR/quarantine"
 JSON_OUTPUT_FILE="$LOG_DIR/latest_scan.json"
 THREAT_INTEL_DIR="$LOG_DIR/threat_intel"
 YARA_RULES_DIR="$LOG_DIR/yara_rules"
+SCRIPTS_DIR="$LOG_DIR/scripts"
 HONEYPOT_LOG="$LOG_DIR/honeypot.log"
 EBPF_LOG="$LOG_DIR/ebpf_events.log"
 
@@ -418,7 +419,7 @@ start_ebpf_monitoring() {
     log_info "Starting eBPF-based kernel monitoring..."
 
     # Monitor process execution
-    cat > "/tmp/ghost_sentinel_execsnoop.py" << 'EOF'
+    cat > "$SCRIPTS_DIR/ghost_sentinel_execsnoop.py" << 'EOF'
 #!/usr/bin/env python3
 import sys
 import time
@@ -493,7 +494,7 @@ EOF
 
     # Start eBPF monitoring in background
     if command -v python3 >/dev/null 2>&1; then
-        python3 /tmp/ghost_sentinel_execsnoop.py &
+        python3 "$SCRIPTS_DIR/ghost_sentinel_execsnoop.py" &
         echo $! > "$LOG_DIR/ebpf_monitor.pid"
         log_info "eBPF process monitoring started"
     fi
@@ -506,14 +507,19 @@ stop_ebpf_monitoring() {
             kill "$ebpf_pid" 2>/dev/null || true
         fi
         rm -f "$LOG_DIR/ebpf_monitor.pid"
+
+        if [[ -s "$EBPF_LOG" ]]; then
+            log_alert "$MEDIUM" "EBPF found $(wc -l "$EBPF_LOG") suspicious execs: $(tail -n 1 "$EBPF_LOG")"
+            mv "$EBPF_LOG" "$EBPF_LOG.$(date +%FT%T).txt"
+        fi
     fi
-    rm -f /tmp/ghost_sentinel_execsnoop.py
+    rm -f "$SCRIPTS_DIR/ghost_sentinel_execsnoop.py"
 }
 
 # Honeypot implementation for detecting scanning/attacks
 start_honeypots() {
-    if [[ "$HAS_NETCAT" != true ]]; then
-        log_info "Netcat not available - honeypots disabled"
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_info "python3 not available - honeypots disabled"
         return
     fi
 
@@ -531,11 +537,7 @@ start_honeypots() {
                 declare timestamp=$(date '+%Y-%m-%d %H:%M:%S')
                 declare connection_info=""
 
-                connection_info=$(timeout 30 $NETCAT_BIN -l -p "$port" -s 127.0.0.1 2>&1 || true)
-                # if netcat prints specific error strings in the output, assume invalid arguments, fallback to different command
-                if echo "$connection_info" | grep -qiE 'usage:|punt!|Ncat:' &>/dev/null; then
-                    connection_info=$(timeout 30 "$NETCAT_BIN" -l 127.0.0.1 "$port" 2>&1 || true)
-                fi
+                connection_info="$(python3 -c 'import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("'"${HONEYPOT_BINDADDR-127.0.0.1}"'", '"$port"')); s.listen(1); conn, addr = s.accept(); print(f"Connected: {addr}"); conn.settimeout(10); print(conn.recv(1024)); conn.close()' 2>&1)"
 
                 if [[ -n "$connection_info" ]]; then
                     echo "[$timestamp] HONEYPOT_HIT: Port $port - $connection_info" >> "$HONEYPOT_LOG"
@@ -593,7 +595,7 @@ start_api_server() {
 
     log_info "Starting REST API server on localhost:$API_PORT..."
 
-    cat > "/tmp/ghost_sentinel_api.py" << 'EOF'
+    cat > "$SCRIPTS_DIR/ghost_sentinel_api.py" << 'EOF'
 #!/usr/bin/env python3
 import json
 import http.server
@@ -756,7 +758,7 @@ except Exception as e:
 EOF
 
     # Start API server in background
-    GHOST_SENTINEL_LOG_DIR="$LOG_DIR" GHOST_SENTINEL_API_PORT="$API_PORT" python3 /tmp/ghost_sentinel_api.py &
+    GHOST_SENTINEL_LOG_DIR="$LOG_DIR" GHOST_SENTINEL_API_PORT="$API_PORT" python3 "$SCRIPTS_DIR/ghost_sentinel_api.py" &
     echo $! > "$LOG_DIR/api_server.pid"
     log_info "API server started on http://127.0.0.1:$API_PORT"
 }
@@ -769,7 +771,7 @@ stop_api_server() {
         fi
         rm -f "$LOG_DIR/api_server.pid"
     fi
-    rm -f /tmp/ghost_sentinel_api.py
+    rm -f "$SCRIPTS_DIR/ghost_sentinel_api.py"
 }
 
 # Anti-evasion detection for advanced threats
@@ -808,7 +810,7 @@ detect_anti_evasion() {
 
     # Detect modified system calls (if root)
     if [[ $EUID -eq 0 ]] && [[ -r /proc/kallsyms ]]; then
-        declare suspicious_symbols=$(grep -E "(hijacked|hook|detour)" /proc/kallsyms 2>/dev/null || echo "")
+        declare suspicious_symbols=$(grep -E "(hijack|detour)" /proc/kallsyms 2>/dev/null | grep -vE '(setup_detour_execution$|arch_uretprobe_hijack_return_addr)' || echo "")
         if [[ -n "$suspicious_symbols" ]]; then
             log_alert $CRITICAL "Suspicious kernel symbols detected: $suspicious_symbols"
         fi
@@ -842,7 +844,7 @@ monitor_network_advanced() {
     local ss_ports="$(ss -Htulnp 2>/dev/null | grep -oE ":[0-9]+ " | sort -u | wc -l)"
     local netstat_ports="$(netstat -tulnp 2>/dev/null | tail -n +3 | grep -oE ":[0-9]+ " | sort -u | wc -l)"
     # XXX lsof produces output which is not comparable with ss or netstat
-    local lsof_ports="$(lsof -i -P -n 2>/dev/null | sed "s/->.*/ /g" | grep -oE ":[0-9]+ " | sort -u | wc -l)"
+    local lsof_ports="$(lsof -i -P -n 2>/dev/null | grep -vF -- '->' | grep -oE ":[0-9]+ " | sort -u | wc -l)"
 
     local diff_ss_netstat="$(( ss_ports - netstat_ports ))"
     local diff_ss_lsof="$(( lsof_ports - ss_ports ))"
@@ -937,6 +939,10 @@ quarantine_file_forensic() {
             strings "$file" | head -100 > "$forensic_dir/${quarantine_name}.strings" 2>/dev/null || true
         fi
 
+        if [[ "${QUARANTINE_ENABLE-true}" == "false" ]]; then
+          return
+        fi
+
         # Move to quarantine
         if mv "$file" "$QUARANTINE_DIR/$quarantine_name" 2>/dev/null; then
             log_info "File quarantined with forensics: $file -> $QUARANTINE_DIR/$quarantine_name"
@@ -953,13 +959,14 @@ quarantine_file_forensic() {
 # Initialize enhanced directory structure
 init_sentinel() {
     # Create directories FIRST
-    for dir in "$LOG_DIR" "$BASELINE_DIR" "$ALERTS_DIR" "$QUARANTINE_DIR" "$BACKUP_DIR" "$THREAT_INTEL_DIR" "$YARA_RULES_DIR"; do
+    for dir in "$LOG_DIR" "$BASELINE_DIR" "$ALERTS_DIR" "$QUARANTINE_DIR" "$BACKUP_DIR" "$THREAT_INTEL_DIR" "$YARA_RULES_DIR" "$SCRIPTS_DIR"; do
         if ! mkdir -p "$dir" 2>/dev/null; then
             echo -e "${RED}[ERROR]${NC} Cannot create directory: $dir"
             echo "Please run as root or ensure write permissions"
             exit 1
         fi
     done
+    chmod 700 "$SCRIPTS_DIR"
 
     # Load configuration BEFORE doing anything else
     load_config_safe
@@ -1380,8 +1387,12 @@ create_baseline() {
     declare pkg_hash=""
     if [[ "$IS_DEBIAN" == true ]]; then
         pkg_hash=$(dpkg -l 2>/dev/null | sha256sum | cut -d' ' -f1)
+        dpkg --get-selections | sort -u > "$BASELINE_DIR/packages_list.txt"
     elif [[ "$IS_FEDORA" == true ]]; then
         pkg_hash=$(rpm -qa --queryformat="%{NAME}-%{VERSION}-%{RELEASE}\n" 2>/dev/null | sort | sha256sum | cut -d' ' -f1)
+    elif command -v pacman > /dev/null 2>/dev/null; then
+        pacman -Qq | sort -u > "$BASELINE_DIR/packages_list.txt"
+        pkg_hash=$(pacman -Q | sort | sha256sum | cut -d' ' -f1)
     fi
 
     if [[ "$IS_NIXOS" == true ]]; then
@@ -1428,7 +1439,7 @@ main_enhanced() {
         json_set "$JSON_OUTPUT_FILE" ".features.ebpf_monitoring" "true"
     fi
 
-    if [[ "$ENABLE_HONEYPOTS" == true ]] && [[ "$HAS_NETCAT" == true ]] && [[ $EUID -eq 0 ]]; then
+    if [[ "$ENABLE_HONEYPOTS" == true ]] && [[ $EUID -eq 0 ]]; then
         start_honeypots
         features_enabled+=("honeypots")
         json_set "$JSON_OUTPUT_FILE" ".features.honeypots" "true"
@@ -1597,7 +1608,7 @@ monitor_processes() {
     log_info "Basic process monitoring..."
 
     # Check for suspicious processes
-    declare suspicious_procs=("nc" "netcat" "socat" "ncat")
+    declare suspicious_procs=("^nc" "netcat" "socat" "ncat")
     for proc in "${suspicious_procs[@]}"; do
         if pgrep -f "$proc" >/dev/null 2>&1; then
             pgrep -f "$proc" 2>/dev/null | head -3 | while read pid; do

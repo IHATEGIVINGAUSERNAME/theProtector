@@ -525,6 +525,17 @@ start_honeypots() {
 
     log_info "Starting honeypot listeners on well-known ports..."
 
+    # Skip privileged ports if not running as root
+    TMP_HONEYPOT_PORTS=()
+    for port in "${HONEYPOT_PORTS[@]}"; do
+        if [[ "${port}" -lt 1024 ]] && [[ "$EUID" -ne 0 ]]; then
+            log_info "Honeyport port $port requires root privileges - skipping"
+        else
+            TMP_HONEYPOT_PORTS+=("$port")
+        fi
+    done
+    HONEYPOT_PORTS=("${TMP_HONEYPOT_PORTS[@]}")
+
     for port in "${HONEYPOT_PORTS[@]}"; do
         # Check if port is already in use
         if ss -tuln 2>/dev/null | grep -q ":$port "; then
@@ -1439,7 +1450,7 @@ main_enhanced() {
         json_set "$JSON_OUTPUT_FILE" ".features.ebpf_monitoring" "true"
     fi
 
-    if [[ "$ENABLE_HONEYPOTS" == true ]] && [[ $EUID -eq 0 ]]; then
+    if [[ "$ENABLE_HONEYPOTS" == true ]]; then
         start_honeypots
         features_enabled+=("honeypots")
         json_set "$JSON_OUTPUT_FILE" ".features.honeypots" "true"
@@ -1730,16 +1741,22 @@ install_cron() {
     fi
 
     # Optionally create systemd service
-    if [[ $EUID -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
+    if command -v systemctl >/dev/null 2>&1; then
         create_systemd_service
     fi
 }
 
 # Create systemd service for enhanced integration
 create_systemd_service() {
-    declare service_file="/etc/systemd/system/ghost-sentinel.service"
-    declare timer_file="/etc/systemd/system/ghost-sentinel.timer"
-
+    declare systemd_args=""
+    if [[ "$EUID" -eq 0 ]]; then
+        declare service_file="/etc/systemd/system/ghost-sentinel.service"
+        declare timer_file="/etc/systemd/system/ghost-sentinel.timer"
+    else
+        declare service_file="$HOME/.config/systemd/user/ghost-sentinel.service"
+        declare timer_file="$HOME/.config/systemd/user/ghost-sentinel.timer"
+        systemd_args="--user"
+    fi
     cat > "$service_file" << EOF
 [Unit]
 Description=Ghost Sentinel v2.3 Security Monitor
@@ -1766,9 +1783,9 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable ghost-sentinel.timer
-    systemctl start ghost-sentinel.timer
+    systemctl ${systemd_args} daemon-reload
+    systemctl enable ${systemd_args} ghost-sentinel.timer
+    systemctl start ${systemd_args} ghost-sentinel.timer
 
     log_info "Systemd service and timer installed"
 }
@@ -1922,22 +1939,14 @@ case "${1:-run}" in
     fi
     ;;
 "systemd")
-    if [[ $EUID -eq 0 ]]; then
-        create_systemd_service
-    else
-        echo "systemd integration requires root privileges"
-    fi
+    create_systemd_service
     ;;
 "honeypot")
-    if [[ "$EUID" -eq 0 ]]; then
-        init_sentinel
-        start_honeypots
-        echo "Honeypots started. Press Ctrl+C to stop."
-        read -r
-        stop_honeypots
-    else
-        echo "Honeypots require root privileges"
-    fi
+    init_sentinel
+    start_honeypots
+    echo "Honeypots started. Press Ctrl+C to stop."
+    read -r
+    stop_honeypots
     ;;
 "api")
     init_sentinel

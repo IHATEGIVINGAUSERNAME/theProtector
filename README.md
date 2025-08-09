@@ -460,3 +460,65 @@ For issues, questions, or contributions:
 ## Acknowledgments
 
 This project incorporates techniques and patterns from various open-source security tools and research papers in the host-based monitoring field.
+
+# Setting Up Slack Alerts for TheProtector
+
+## Create Your Slack Webhook
+
+### Step 1: Get a Slack Account
+1. Go to `slack.com` and create a free workspace
+2. Name it something like "Security Alerts" 
+3. Create a channel called `#security-alerts`
+
+### Step 2: Create Webhook
+1. Go to `https://api.slack.com/apps`
+2. Click "Create New App" → "From scratch"
+3. Name it "Security Monitor" and select your workspace
+4. Click "Incoming Webhooks" → Toggle "On"
+5. Click "Add New Webhook to Workspace"
+6. Choose your `#security-alerts` channel
+7. Copy the webhook URL (starts with `https://hooks.slack.com/services/`)
+
+## Configure TheProtector Integration
+
+### Step 3: Setup Monitor
+```bash
+# Save the script as monitor.sh
+chmod +x monitor.sh
+
+# Initialize
+./monitor.sh init
+
+# Configure
+./monitor.sh config
+```
+
+### Step 4: Edit Configuration
+In the config file, change these two lines:
+```bash
+SLACK_ENABLED=true
+SLACK_WEBHOOK_URL="paste_your_webhook_url_here"
+```
+Save and exit.
+
+### Step 5: Test and Install
+```bash
+# Test it works
+./monitor.sh test
+
+# Install monitoring
+./monitor.sh install
+```
+
+Done. You'll now get security alerts in Slack automatically.
+
+## Commands
+```bash
+./monitor.sh config    # Edit settings
+./monitor.sh test      # Test connection
+./monitor.sh status    # Check if working
+./monitor.sh install   # Enable monitoring
+```
+
+That's it. The monitor checks TheProtector logs every minute and sends new alerts to Slack.
+

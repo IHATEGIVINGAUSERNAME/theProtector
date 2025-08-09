@@ -15,14 +15,19 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         stdenv = pkgs.stdenv;
+        # Create Python wrapper for python dependencies
+        myPython = pkgs.python313.withPackages (python-pkgs: [
+          python-pkgs.bcc
+        ]);
         theProtectorWrapper = pkgs.writeShellScriptBin "theprotector.sh" ''
           # Contain nix-packaged dependencies in $PATH
-          PATH="${pkgs.bpftrace}/bin:${pkgs.coreutils}/bin:${pkgs.inotify-tools}/bin:${pkgs.jq}/bin:${pkgs.netcat-gnu}/bin:${pkgs.python313}/bin:${pkgs.yara}/bin:$PATH"
+          PATH="${pkgs.bpftrace}/bin:${pkgs.coreutils}/bin:${pkgs.inotify-tools}/bin:${pkgs.jq}/bin:${pkgs.netcat-gnu}/bin:${myPython}/bin:${pkgs.yara}/bin:$PATH"
           ${self}/theprotector.sh "$@"
         '';
         theProtectorPkg = stdenv.mkDerivation {
           name = "theProtector";
           builder = pkgs.bash;
+          meta.mainProgram = "theprotector.sh";
           args = [ "-c" "${pkgs.coreutils}/bin/mkdir -p $out/bin && ${pkgs.coreutils}/bin/cp ${theProtectorWrapper}/bin/theprotector.sh $out/bin/theprotector.sh" ];
         };
       in

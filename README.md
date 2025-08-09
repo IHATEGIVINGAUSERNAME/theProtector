@@ -22,7 +22,6 @@ theProtector provides multi-layer security monitoring for Linux systems by combi
 ### System Requirements
 - Linux kernel 4.9+ (for eBPF functionality)
 - Bash 4.0+
-- Root privileges (required for kernel monitoring and honeypots)
 
 ### Optional Dependencies
 ```bash
@@ -86,6 +85,8 @@ nix profile install github:IHATEGIVINGAUSERNAME/theprotector
 ## Usage
 
 ### Basic Commands
+
+> Unprivileged usage -- running without `sudo` -- is also supported
 
 ```bash
 # Run standard security scan

@@ -974,12 +974,17 @@ init_sentinel() {
     # Create directories FIRST
     for dir in "$LOG_DIR" "$BASELINE_DIR" "$ALERTS_DIR" "$QUARANTINE_DIR" "$BACKUP_DIR" "$THREAT_INTEL_DIR" "$YARA_RULES_DIR" "$SCRIPTS_DIR"; do
         if ! mkdir -p "$dir" 2>/dev/null; then
+           
             echo -e "${RED}[ERROR]${NC} Cannot create directory: $dir"
             echo "Please run as root or ensure write permissions"
             exit 1
         fi
     done
     chmod 700 "$SCRIPTS_DIR"
+
+            declare today=$(date +%Y%m%d)
+            declare alert_file="$ALERTS_DIR/$today.log"
+            echo "=== Ghost Sentinel v2.3 - $(date '+%Y-%m-%d %H:%M:%S') ===" > "$alert_file"
 
     # Load configuration BEFORE doing anything else
     load_config_safe
@@ -1592,9 +1597,9 @@ generate_enhanced_summary() {
             declare level=$(echo "$line" | grep -o "\[LEVEL:[0-9]\]" | grep -o "[0-9]")
             declare msg=$(echo "$line" | cut -d']' -f3- | sed 's/^ *//')
             if [[ "$level" == "1" ]]; then
-                echo -e "${RED}  🚨 CRITICAL: $msg${NC}"
+                echo -e "${RED}   CRITICAL: $msg${NC}"
             else
-                echo -e "${YELLOW}  ⚠️  HIGH: $msg${NC}"
+                echo -e "${YELLOW}   HIGH: $msg${NC}"
             fi
         done
     else
@@ -1609,7 +1614,7 @@ generate_enhanced_summary() {
     echo -e "${CYAN}Baseline Age: $baseline_age days${NC}"
 
     if [[ $baseline_age -gt 30 ]]; then
-        echo -e "${YELLOW}⚠️  Consider updating baseline (run with 'baseline' option)${NC}"
+        echo -e "${YELLOW}  Consider updating baseline (run with 'baseline' option)${NC}"
     fi
 }
 
@@ -1685,12 +1690,12 @@ monitor_memory() {
 
     # Check for high memory usage
     ps aux --sort=-%mem --no-headers 2>/dev/null | head -3 | while read line; do
-        declare mem_usage=$(echo "$line" | awk '{print $4}')
+        declare mem_usage=$(echo "$line" | awk '{print $4}' | tr -d '\n\r')
         declare proc_name=$(echo "$line" | awk '{print $11}' | xargs basename 2>/dev/null)
         declare pid=$(echo "$line" | awk '{print $2}')
 
         if ! is_whitelisted_process "$proc_name"; then
-            if (( $(echo "$mem_usage > 80" | bc -l 2>/dev/null || echo 0) )); then
+            if [[ -n "$mem_usage" ]] && [[ "$mem_usage" =~ ^[0-9]+\.?[0-9]*$ ]] && (( $(echo "$mem_usage > 80" | bc -l 2>/dev/null || echo 0) )); then
                 log_alert $MEDIUM "High memory usage: $proc_name (PID: $pid, MEM: $mem_usage%)"
             fi
         fi

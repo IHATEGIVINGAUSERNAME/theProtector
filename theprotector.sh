@@ -2056,8 +2056,8 @@ case "${1:-run}" in
     fi
     ;;
 "ebpf")
+    init_sentinel
     if [[ "$HAS_BCC" == true ]] && [[ $EUID -eq 0 ]]; then
-        init_sentinel
         start_ebpf_monitoring
         echo "eBPF monitoring started. Press Ctrl+C to stop."
         read -r

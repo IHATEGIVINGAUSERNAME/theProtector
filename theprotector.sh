@@ -152,9 +152,9 @@ check_dependencies() {
         HAS_YARA=true
     fi
 
-    # Check for eBPF/BCC tools
-    if command -v bpftrace >/dev/null 2>&1 || [[ -d /usr/share/bcc/tools ]]; then
-        HAS_BCC=true
+    # Check for eBPF/BCC tools - fixing for correct path
+    if command -v bpftrace >/dev/null 2>&1 || [[ -d /usr/share/bcc/tools ]] || command -v execsnoop-bpfcc >/dev/null 2>&1; then
+    HAS_BCC=true
     fi
 
     # Check for netcat

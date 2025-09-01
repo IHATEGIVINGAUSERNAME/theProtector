@@ -684,7 +684,7 @@ class GhostSentinelHandler(http.server.BaseHTTPRequestHandler):
 </head>
 <body>
     <div class="container">
-        <h1>🛡️ Ghost Sentinel v2.3 Dashboard <span class="refresh" onclick="refreshData()">🔄 Refresh</span></h1>
+        <h1>Ghost Sentinel v2.3 Dashboard <span class="refresh" onclick="refreshData()">Refresh</span></h1>
         <div class="card">
             <h2>System Status</h2>
             <pre id="status">Loading...</pre>

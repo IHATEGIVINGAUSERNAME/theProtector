@@ -81,6 +81,11 @@ set +u
 [[ -n $DASHBOARD_PORT ]] && API_PORT="$DASHBOARD_PORT" && API_PORT_DEFAULT=false
 set -u
 
+# Function to assert if a command exists
+cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 # Cleanup function for proper resource management
 cleanup() {
     declare exit_code=$?
@@ -121,7 +126,7 @@ acquire_lock() {
     fi
 
     # Use flock if available, otherwise manual locking
-    if command -v flock >/dev/null 2>&1; then
+    if cmd flock; then
         exec 200>"$LOCK_FILE"
         if ! flock -n 200; then
             echo "Failed to acquire lock. Another instance may be running."
@@ -138,30 +143,30 @@ acquire_lock() {
 # Enhanced dependency checking
 check_dependencies() {
     # Check for jq
-    if command -v jq >/dev/null 2>&1; then
+    if cmd jq; then
         HAS_JQ=true
     fi
 
     # Check for inotify tools
-    if command -v inotifywait >/dev/null 2>&1; then
+    if cmd inotifywait; then
         HAS_INOTIFY=true
     fi
 
     # Check for YARA
-    if command -v yara >/dev/null 2>&1; then
+    if cmd yara; then
         HAS_YARA=true
     fi
 
     # Check for eBPF/BCC tools - fixing for correct path
-    if command -v bpftrace >/dev/null 2>&1 || [[ -d /usr/share/bcc/tools ]] || command -v execsnoop-bpfcc >/dev/null 2>&1; then
+    if cmd bpftrace || [[ -d /usr/share/bcc/tools ]] || cmd execsnoop-bpfcc; then
     HAS_BCC=true
     fi
 
     # Check for netcat
-    if command -v nc >/dev/null 2>&1; then
+    if cmd nc; then
         HAS_NETCAT=true
         [[ "$VERBOSE" == true ]] && log_info "Detected 'nc' executable"
-    elif command -v netcat >/dev/null 2>&1; then
+    elif cmd netcat; then
         HAS_NETCAT=true
         NETCAT_BIN="netcat"
         [[ "$VERBOSE" == true ]] && log_info "Detected 'netcat' executable"
@@ -187,11 +192,11 @@ detect_environment() {
     fi
 
     # VM detection
-    if command -v systemd-detect-virt >/dev/null 2>&1; then
+    if cmd systemd-detect-virt; then
         if systemd-detect-virt -q; then
             IS_VM=true
         fi
-    elif command -v dmidecode >/dev/null 2>&1 && [[ $EUID -eq 0 ]]; then
+    elif cmd dmidecode && [[ $EUID -eq 0 ]]; then
         declare vendor=$(dmidecode -s system-product-name 2>/dev/null | tr '[:upper:]' '[:lower:]')
         if [[ "$vendor" =~ (vmware|virtualbox|qemu|kvm|xen) ]]; then
             IS_VM=true
@@ -493,7 +498,7 @@ except Exception as e:
 EOF
 
     # Start eBPF monitoring in background
-    if command -v python3 >/dev/null 2>&1; then
+    if cmd python3; then
         python3 "$SCRIPTS_DIR/ghost_sentinel_execsnoop.py" &
         echo $! > "$LOG_DIR/ebpf_monitor.pid"
         log_info "eBPF process monitoring started"
@@ -518,7 +523,7 @@ stop_ebpf_monitoring() {
 
 # Honeypot implementation for detecting scanning/attacks
 start_honeypots() {
-    if ! command -v python3 >/dev/null 2>&1; then
+    if ! cmd python3; then
         log_info "python3 not available - honeypots disabled"
         return
     fi
@@ -578,7 +583,7 @@ stop_honeypots() {
 
 # REST API server for dashboard integration
 start_api_server() {
-    if ! command -v python3 >/dev/null 2>&1; then
+    if ! cmd python3; then
         log_info "Python3 not available - API server disabled"
         return
     fi
@@ -948,7 +953,7 @@ quarantine_file_forensic() {
         fi
 
         # String analysis
-        if command -v strings >/dev/null 2>&1; then
+        if cmd strings; then
             strings "$file" | head -100 > "$forensic_dir/${quarantine_name}.strings" 2>/dev/null || true
         fi
 
@@ -1130,7 +1135,7 @@ log_alert() {
     json_add_alert "$level" "$message" "$timestamp"
 
     # Send to syslog with facility (only if SYSLOG_ENABLED is set)
-    if [[ "${SYSLOG_ENABLED:-false}" == true ]] && command -v logger >/dev/null 2>&1; then
+    if [[ "${SYSLOG_ENABLED:-false}" == true ]] && cmd logger; then
         logger -t "ghost-sentinel[$]" -p security.alert -i "$message" 2>/dev/null || true
     fi
 
@@ -1156,22 +1161,22 @@ send_critical_alert() {
 
     # Email notification with fallback check
     if [[ "$SEND_EMAIL" == true ]] && [[ -n "$EMAIL_RECIPIENT" ]]; then
-        if command -v mail >/dev/null 2>&1; then
+        if cmd mail; then
             echo "CRITICAL SECURITY ALERT: $message" | mail -s "Ghost Sentinel Alert" "$EMAIL_RECIPIENT" 2>/dev/null || true
-        elif command -v sendmail >/dev/null 2>&1; then
+        elif cmd sendmail; then
             echo -e "Subject: Ghost Sentinel Critical Alert\n\nCRITICAL SECURITY ALERT: $message" | sendmail "$EMAIL_RECIPIENT" 2>/dev/null || true
         fi
     fi
 
     # Webhook notification with improved error handling
-    if [[ -n "$WEBHOOK_URL" ]] && command -v curl >/dev/null 2>&1; then
+    if [[ -n "$WEBHOOK_URL" ]] && cmd curl; then
         curl -s --max-time 10 -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{\"alert\":\"CRITICAL\",\"message\":\"$message\",\"timestamp\":\"$(date -Iseconds)\",\"hostname\":\"$(hostname)\"}" 2>/dev/null || true
     fi
 
     # Slack webhook with rich formatting
-    if [[ -n "$SLACK_WEBHOOK_URL" ]] && command -v curl >/dev/null 2>&1; then
+    if [[ -n "$SLACK_WEBHOOK_URL" ]] && cmd curl; then
         declare payload=$(cat << EOF
 {
     "attachments": [
@@ -1205,9 +1210,9 @@ EOF
 
     # Desktop notification for interactive sessions (with fallbacks)
     if [[ -n "${DISPLAY:-}" ]]; then
-        if command -v notify-send >/dev/null 2>&1; then
+        if cmd notify-send; then
             notify-send "Ghost Sentinel" "CRITICAL: $message" --urgency=critical 2>/dev/null || true
-        elif command -v zenity >/dev/null 2>&1; then
+        elif cmd zenity; then
             zenity --error --text="Ghost Sentinel CRITICAL: $message" 2>/dev/null || true &
         fi
     fi
@@ -1242,7 +1247,7 @@ update_threat_intelligence() {
         declare temp_file=$(mktemp)
 
         # FireHOL Level 1 blocklist (reliable source)
-        if command -v curl >/dev/null 2>&1; then
+        if cmd curl; then
             if curl -s --max-time 30 -o "$temp_file" "https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset" 2>/dev/null; then
                 # Better validation - check for IP addresses and reasonable file size
                 if [[ -s "$temp_file" ]] && [[ $(grep -E "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" "$temp_file" | wc -l) -gt 100 ]]; then
@@ -1321,7 +1326,7 @@ is_malicious_ip() {
     fi
 
     # Check against AbuseIPDB if API key is available
-    if [[ -n "$ABUSEIPDB_API_KEY" ]] && command -v curl >/dev/null 2>&1; then
+    if [[ -n "$ABUSEIPDB_API_KEY" ]] && cmd curl; then
         declare cache_file="$THREAT_INTEL_DIR/abuseipdb_$addr"
         declare cache_age=3600  # 1 hour cache
 
@@ -1346,7 +1351,7 @@ is_malicious_ip() {
 
         if [[ -n "$response" ]]; then
             declare confidence=0
-            if command -v jq >/dev/null 2>&1; then
+            if cmd jq; then
                 confidence=$(echo "$response" | jq -r '.data.abuseConfidencePercentage // 0' 2>/dev/null || echo 0)
             else
                 # Fallback parsing
@@ -1370,9 +1375,9 @@ create_baseline() {
     log_info "Creating optimized security baseline..."
 
     # Network baseline
-    if command -v ss >/dev/null 2>&1; then
+    if cmd ss; then
         ss -tulnp --no-header > "$BASELINE_DIR/network_baseline.txt" 2>/dev/null || true
-    elif command -v netstat >/dev/null 2>&1; then
+    elif cmd netstat; then
         netstat -tulnp --numeric-hosts --numeric-ports > "$BASELINE_DIR/network_baseline.txt" 2>/dev/null || true
     fi
 
@@ -1380,7 +1385,7 @@ create_baseline() {
     ps -eo pid,ppid,user,comm,cmd --no-headers > "$BASELINE_DIR/process_baseline.txt" 2>/dev/null || true
 
     # Services baseline
-    if command -v systemctl >/dev/null 2>&1; then
+    if cmd systemctl; then
         systemctl list-units --type=service --state=running --no-pager --no-legend --plain > "$BASELINE_DIR/services_baseline.txt" 2>/dev/null || true
     fi
 
@@ -1397,7 +1402,7 @@ create_baseline() {
     fi
 
     # Login history (limited)
-    if command -v last >/dev/null 2>&1; then
+    if cmd last; then
         last -n 10 --time-format=iso > "$BASELINE_DIR/last_baseline.txt" 2>/dev/null || true
     fi
 
@@ -1408,7 +1413,7 @@ create_baseline() {
         dpkg --get-selections | sort -u > "$BASELINE_DIR/packages_list.txt"
     elif [[ "$IS_FEDORA" == true ]]; then
         pkg_hash=$(rpm -qa --queryformat="%{NAME}-%{VERSION}-%{RELEASE}\n" 2>/dev/null | sort | sha256sum | cut -d' ' -f1)
-    elif command -v pacman > /dev/null 2>/dev/null; then
+    elif cmd pacman; then
         pacman -Qq | sort -u > "$BASELINE_DIR/packages_list.txt"
         pkg_hash=$(pacman -Q | sort | sha256sum | cut -d' ' -f1)
     fi
@@ -1732,7 +1737,7 @@ main() {
 install_cron() {
     declare cron_entry="0 * * * * $SCRIPT_DIR/$SCRIPT_NAME >/dev/null 2>&1"
 
-    if command -v crontab >/dev/null 2>&1; then
+    if cmd crontab; then
         if ! crontab -l 2>/dev/null | grep -q "ghost_sentinel"; then
             (crontab -l 2>/dev/null; echo "$cron_entry") | crontab - 2>/dev/null || {
                 echo "Failed to install cron job - check permissions"
@@ -1748,7 +1753,7 @@ install_cron() {
     fi
 
     # Optionally create systemd service
-    if command -v systemctl >/dev/null 2>&1; then
+    if cmd systemctl; then
         create_systemd_service
     fi
 }
@@ -1805,13 +1810,13 @@ self_update() {
     declare temp_file=$(mktemp)
     declare temp_sig=$(mktemp)
 
-    if command -v curl >/dev/null 2>&1; then
+    if cmd curl; then
         # Download script and signature
         if curl -s --max-time 30 -o "$temp_file" "$update_url" && \
            curl -s --max-time 30 -o "$temp_sig" "$update_url.sig"; then
 
             # Verify GPG signature if available
-            if command -v gpg >/dev/null 2>&1 && [[ -s "$temp_sig" ]]; then
+            if cmd gpg && [[ -s "$temp_sig" ]]; then
                 if gpg --verify "$temp_sig" "$temp_file" 2>/dev/null; then
                     log_info "GPG signature verified"
                 else

@@ -1723,7 +1723,8 @@ main() {
     log_info "Security scan completed"
 
     declare today=$(date +%Y%m%d)
-    declare alert_count=$(grep -c "^\[" "$ALERTS_DIR/$today.log" 2>/dev/null || echo 0)
+    declare alert_count=$(grep -c "^\[" "$ALERTS_DIR/$today.log" 2>/dev/null)
+    alert_count=${alert_count:-0}
 
     if [[ $alert_count -gt 0 ]]; then
         echo -e "${YELLOW}Security Summary: $alert_count alerts generated${NC}"
@@ -2072,6 +2073,9 @@ case "${1:-run}" in
     fi
     ;;
 *)
+    main
+    ;;
+esac
     main
     ;;
 esac

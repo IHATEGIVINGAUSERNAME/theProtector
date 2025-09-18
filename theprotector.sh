@@ -1596,20 +1596,20 @@ generate_enhanced_summary() {
         echo -e "${CYAN}Dashboard: http://127.0.0.1:$API_PORT${NC}"
     fi
 
-    if [[ $critical_count -gt 0 ]] || [[ $high_count -gt 0 ]]; then
-        echo -e "\n${RED}Priority Alerts:${NC}"
-        grep -E "(CRITICAL|HIGH)" "$alert_file" 2>/dev/null | tail -5 | while read line; do
-            declare level=$(echo "$line" | grep -o "\[LEVEL:[0-9]\]" | grep -o "[0-9]")
-            declare msg=$(echo "$line" | cut -d']' -f3- | sed 's/^ *//')
-            if [[ "$level" == "1" ]]; then
-                echo -e "${RED}   CRITICAL: $msg${NC}"
-            else
-                echo -e "${YELLOW}   HIGH: $msg${NC}"
-            fi
-        done
-    else
-        echo -e "${GREEN}✓ No critical threats detected${NC}"
-    fi
+if [[ $critical_count -gt 0 ]] || [[ $high_count -gt 0 ]]; then
+    echo -e "\n${RED}Priority Alerts:${NC}"
+    while read line; do
+        level=$(echo "$line" | grep -o "\[LEVEL:[0-9]\]" | grep -o "[0-9]")
+        msg=$(echo "$line" | cut -d']' -f3- | sed 's/^ *//')
+        if [[ "$level" == "1" ]]; then
+            echo -e "${RED}   CRITICAL: $msg${NC}"
+        else
+            echo -e "${YELLOW}   HIGH: $msg${NC}"
+        fi
+    done < <(grep -E "(CRITICAL|HIGH)" "$alert_file" 2>/dev/null | tail -5)
+else
+    echo -e "${GREEN}✓ No critical threats detected${NC}"
+fi
 
     # Integrity status
     declare baseline_age=0

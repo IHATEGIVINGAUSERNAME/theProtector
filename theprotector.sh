@@ -2076,6 +2076,3 @@ case "${1:-run}" in
     main
     ;;
 esac
-    main
-    ;;
-esac
